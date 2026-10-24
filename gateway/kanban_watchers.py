@@ -296,7 +296,9 @@ class GatewayKanbanWatchersMixin:
             try:
                 # Emergency stop (`hermes pause`): no auto-decompose or
                 # dispatch while paused; running workers finish naturally.
-                if not _kanban_dispatch_allowed():
+                # A draining owner refuses every claim (runtime_draining): a worker spawned now only
+                # burns the card's failure budget, so claim nothing until the next owner is up.
+                if not _kanban_dispatch_allowed() or self._draining:
                     bad_ticks = 0
                 else:
                     # Re-read the auto-decompose toggle live so disabling it

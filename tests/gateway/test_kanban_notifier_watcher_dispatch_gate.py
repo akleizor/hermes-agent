@@ -66,3 +66,29 @@ def test_notifier_watcher_polls_without_dispatch_ownership():
     assert past_gate, (
         "gateways without the dispatch lock must still poll owned subscriptions"
     )
+
+
+def test_dispatcher_claims_nothing_while_owner_draining():
+    """A draining owner refuses every claim, so a spawned worker would only burn the card's failures."""
+    runner = _make_runner()
+    runner._draining = True
+    dispatcher = MagicMock()
+
+    async def stop_after_first_sleep(_interval):
+        runner._running = False
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    async def no_sleep(_delay):
+        return None
+
+    runner._sleep_between_ticks = stop_after_first_sleep
+    with patch.object(runner, "_kanban_dispatcher_boot", return_value=(None, MagicMock(), {})), \
+            patch("gateway.kanban_watchers._resolve_dispatcher_settings", return_value=MagicMock(interval=1.0)), \
+            patch("gateway.kanban_watchers._KanbanDispatcher", return_value=dispatcher), \
+            patch("gateway.kanban_watchers._to_thread_process_service", fake_to_thread), \
+            patch("gateway.kanban_watchers.asyncio.sleep", new=no_sleep):
+        asyncio.run(runner._kanban_dispatcher_watcher())
+
+    dispatcher.tick_once.assert_not_called()
